@@ -8,7 +8,7 @@ Put a bit of benchmarking to CQEngine
  ```
 * use java to run benchmark. Example:
 ```
- java -jar target\benchmarks.jar QueryTest -jvmArgs "-Xmx1300m -Xms1300m -XX:+UseG1GC"
+ java -jar target\benchmarks.jar query.QueryTest -jvmArgs "-Xmx1300m -Xms1300m -XX:+UseG1GC"
 ```
 * test options:
  java -jar target\benchmarks.jar -h
