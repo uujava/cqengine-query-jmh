@@ -12,5 +12,5 @@ Put a bit of benchmarking to CQEngine
 ```
 * Test options:
  java -jar target\benchmarks.jar -h
-* Results for my environment are[here](https://github.com/uujava/cqengine-query-jmh/releases/latest)
+* Results for my environment are [here](https://github.com/uujava/cqengine-query-jmh/releases/latest)
 
