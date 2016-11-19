@@ -132,7 +132,7 @@ public class Fields {
         public static ValueObject<VObject> newObject(int maxCnc) {
             ValueObject obj = new ValueObject<VObject>(4);
             obj.setValue(id, nextKey());
-            obj.setValue(cncId, Sequence.random(maxCnc));
+            obj.setValue(cncId, (long)Sequence.random(maxCnc));
             return obj;
         }
     }

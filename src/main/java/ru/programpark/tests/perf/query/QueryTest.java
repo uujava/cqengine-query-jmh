@@ -13,16 +13,12 @@ import com.googlecode.cqengine.resultset.ResultSet;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 import static ru.programpark.tests.perf.query.Fields.generate;
+import static ru.programpark.tests.perf.query.Sequence.asStream;
+import static ru.programpark.tests.perf.query.Sequence.randomObject;
 
 /**
  * Tests on a Long collection
@@ -39,13 +35,13 @@ public class QueryTest {
     // indexed collection of Long under test
     private IndexedCollection<Long> first;
     private IndexedCollection<Long> second;
-    // keys hash to compare cqengine  results with hash
-    private Map<Long, Long> firstHash = new ConcurrentHashMap<>();
-    private Map<Long, List<Long>> fkHash = new ConcurrentHashMap<>();
 
     // generate random or sequential data
-    @Param({"true", "false"})
+    @Param({"true"})
     boolean random;
+    // use cached options
+    @Param({"true"})
+    boolean cachedOptions;
 
     private static final SimpleAttribute<Long, Long> ID = new SimpleAttribute<Long, Long>(Long.class, Long.class, "id") {
         @Override
@@ -60,22 +56,20 @@ public class QueryTest {
             return o;
         }
     };
+    private QueryOptions options;
 
     @Setup(Level.Trial)
     public void setUp() throws Exception {
         first = new ConcurrentIndexedCollection<>();
         second = new ConcurrentIndexedCollection<>();
-        // keys hash to compare cqengine results with hash
-        firstHash = new ConcurrentHashMap<>(MAX_IDS);
-        fkHash = new ConcurrentHashMap<>(MAX_IDS);
+        options = cachedOptions ? new QueryOptions() : null;
+
         objIds = random ? generate(MAX_IDS, MAX_IDS * 1000) : generate(MAX_IDS);
-        // fill both collections and a map with same values
+        // fill both collections with same values
         Stream.of(objIds).distinct()
                 .forEach(v -> {
                     first.add(v);
                     second.add(v);
-                    firstHash.put(v, v);
-                    fkHash.put(v, Arrays.asList(v));
                 });
 
         first.addIndex(UniqueIndex.onAttribute(ID));
@@ -85,116 +79,72 @@ public class QueryTest {
         second.addIndex(HashIndex.onAttribute(EID));
     }
 
+
     @Benchmark
-    public void randomBaseline(Blackhole bh) {
-        bh.consume(randomId());
+    public void existsJoin(Blackhole bh) {
+        Query<Long> query = QueryFactory.and(QueryFactory.equal(ID, randomObject(objIds)), QueryFactory.existsIn(second, ID, EID));
+        bh.consume(first.retrieve(query, getOptions()).iterator().next());
     }
 
     @Benchmark
-    public void createIdQuery(Blackhole bh) {
-        Equal equal = QueryFactory.equal(ID, randomId());
-        bh.consume(equal);
-    }
-
-    private Long randomId() {
-        return objIds[Sequence.random(MAX_IDS)];
-    }
-
-    @Benchmark
-    public void createExistsQuery(Blackhole bh) {
-        Query equal = QueryFactory.existsIn(second, ID, EID);
-        bh.consume(equal);
-    }
-
-    @Benchmark
-    public void createUniqueExistsQuery(Blackhole bh) {
-        Query query = QueryFactory.and(QueryFactory.equal(ID, randomId()), QueryFactory.existsIn(second, ID, EID));
-        bh.consume(query);
-    }
-
-    @Benchmark
-    public void uniqueExistsJoin(Blackhole bh) {
-        Query<Long> query = QueryFactory.and(QueryFactory.equal(ID, randomId()), QueryFactory.existsIn(second, ID, EID));
-        bh.consume(first.retrieve(query).iterator().next());
-    }
-
-    @Benchmark
-    public void uniqueUniqueExistsSelfJoin(Blackhole bh) {
-        Long pkValue = randomId();
+    public void existsJoinWithSubquery(Blackhole bh) {
+        Long pkValue = randomObject(objIds);
         Equal<Long, Long> firstEqual = QueryFactory.equal(ID, pkValue);
         Equal<Long, Long> existEqual = QueryFactory.equal(EID, pkValue);
         Query<Long> query = QueryFactory.and(firstEqual, QueryFactory.existsIn(second, ID, EID, existEqual));
-        bh.consume(first.retrieve(query).iterator().next());
+        bh.consume(first.retrieve(query, getOptions()).iterator().next());
     }
 
     @Benchmark
-    public void uniqueJoin(Blackhole bh) {
-        Equal<Long, Long> equal = QueryFactory.equal(EID, randomId());
-        Long found = second.retrieve(equal).iterator().next();
+    public void iteratorJoinByEID(Blackhole bh) {
+        Equal<Long, Long> equal = QueryFactory.equal(EID, randomObject(objIds));
+        Long found = second.retrieve(equal, getOptions()).iterator().next();
         Equal<Long, Long> subQ = QueryFactory.equal(ID, found);
-        bh.consume(first.retrieve(subQ).iterator().next());
+        bh.consume(first.retrieve(subQ, getOptions()).iterator().next());
     }
 
     @Benchmark
-    public void streamJoin(Blackhole bh) {
-        Long value = randomId();
+    public void streamJoinByEID(Blackhole bh) {
+        Long value = randomObject(objIds);
         Equal<Long, Long> equal = QueryFactory.equal(EID, value);
-        Long result = StreamSupport.stream(second.retrieve(equal).spliterator(), false).map(found -> {
+        Long result = asStream(second, equal, getOptions()).map(found -> {
             Equal<Long, Long> subQ = QueryFactory.equal(ID, found);
-            return first.retrieve(subQ).iterator().next();
+            return first.retrieve(subQ, getOptions()).iterator().next();
         }).findFirst().get();
         bh.consume(result);
     }
 
     @Benchmark
-    public void uniqueJoinWithClose(Blackhole bh) {
-        Equal<Long, Long> equal = QueryFactory.equal(EID, randomId());
-        ResultSet retrieve = second.retrieve(equal);
+    public void iteratorJoinByEIDWithClose(Blackhole bh) {
+        Equal<Long, Long> equal = QueryFactory.equal(EID, randomObject(objIds));
+        ResultSet retrieve = second.retrieve(equal, getOptions());
         Long found = (Long) retrieve.iterator().next();
         retrieve.close();
         Equal<Long, Long> subQ = QueryFactory.equal(ID, found);
-        ResultSet result = first.retrieve(subQ);
+        ResultSet result = first.retrieve(subQ, getOptions());
         bh.consume(result.iterator().next());
         result.close();
     }
 
     @Benchmark
-    public void uniqueReversedSelfJoin(Blackhole bh) {
-        Query<Long> query = QueryFactory.and(QueryFactory.existsIn(second, ID, EID), QueryFactory.equal(EID, randomId()));
-        bh.consume(first.retrieve(query).iterator().next());
+    public void joinByEID(Blackhole bh) {
+        Query<Long> query = QueryFactory.and(QueryFactory.existsIn(second, ID, EID), QueryFactory.equal(EID, randomObject(objIds)));
+        bh.consume(first.retrieve(query, getOptions()).iterator().next());
     }
 
     @Benchmark
-    public void selfJoinFirstEntry(Blackhole bh) {
-        bh.consume(first.retrieve(QueryFactory.existsIn(second, ID, EID)).iterator().next());
-    }
-
-    @Benchmark
-    public void fullSelfJoin(Blackhole bh) {
-        ResultSet<Long> resultSet = first.retrieve(QueryFactory.existsIn(second, ID, EID));
-        for (Long aResultSet : resultSet) {
-            bh.consume(aResultSet);
-        }
-    }
-
-    @Benchmark
-    public void queryHash(Blackhole bh) {
-        bh.consume(firstHash.get(randomId()));
-    }
-
-    @Benchmark
-    public void joinHash(Blackhole bh) {
-        Long key = randomId();
-        Iterator<Long> iterator = fkHash.get(key).iterator();
-        while (iterator.hasNext()) {
-            Long next = iterator.next();
-            bh.consume(firstHash.get(next));
-        }
+    public void cubeExistsJoinFirstEntry(Blackhole bh) {
+        bh.consume(first.retrieve(QueryFactory.existsIn(second, ID, EID), getOptions()).iterator().next());
     }
 
     @Benchmark
     public void uniqueQuery(Blackhole bh) {
-        Query<Long> query = QueryFactory.equal(ID, randomId());
-        bh.consume(first.retrieve(query).iterator().next());
+        Query<Long> query = QueryFactory.equal(ID, randomObject(objIds));
+        bh.consume(first.retrieve(query, getOptions()).iterator().next());
+    }
+
+
+    private QueryOptions getOptions() {
+        return options == null ? new QueryOptions() : options;
     }
 }
