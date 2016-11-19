@@ -1,12 +1,16 @@
 Put a bit of benchmarking to CQEngine
-# Prerequisites
+* Prerequisites
   - Java8
   - Maven 3
-# use maven to build project
+* Use maven to build project
+ ```
  mvn clean package
-# use java to run benchmark. Example:
- java -jar target\benchmarks.jar QueryTest -jvmArgs "-Xmx1300m -Xms1300m -XX:+UseG1GC"
-# test options:
+ ```
+* Use java to run benchmark. Example:
+```
+ java -jar target\benchmarks.jar query.QueryTest -jvmArgs "-Xmx1300m -Xms1300m -XX:+UseG1GC"
+```
+* Test options:
  java -jar target\benchmarks.jar -h
-# results for my environment [here](releases/latest)
+* Results for my environment are [here](https://github.com/uujava/cqengine-query-jmh/releases/latest)
 
